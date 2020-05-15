@@ -32,7 +32,7 @@ if ( ! class_exists( 'Main' ) ) {
                 'woocommerce',
                 'Woo CSV Import Category Replacer',
                 'WOOCICR',
-                'woocicr',
+                'import',
                 'woocicr',
                 array( $this, 'main_page' )
             );
