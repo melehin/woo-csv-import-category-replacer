@@ -75,7 +75,13 @@ class Rules {
 
         foreach($row_terms as $i => $term) {
             foreach($this->cached_rules as $j => $rule) {
-                if ( $rule['from'] != "" && strpos( $term, $rule['from'] ) !== false ) {
+                /** Find name and set to */
+                if ( $rule['name'] != "" && ( strpos( $term, $rule['name'] ) !== false 
+                                            || strpos( strtolower ( $term ), strtolower ( $rule['name'] ) ) !== false )) {
+                    $row_terms[$i] = $rule['to'];
+                    break;
+                /** Replace from -> to */
+                } elseif ( $rule['from'] != "" && strpos( $term, $rule['from'] ) !== false ) {
                     $row_terms[$i] = str_replace( $rule['from'], $rule['to'], $term );
                     break;
                 } elseif ( $default_to != null ) {
