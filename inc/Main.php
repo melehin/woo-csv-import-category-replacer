@@ -68,22 +68,31 @@ if ( ! class_exists( 'Main' ) ) {
             $rules_table = new RulesTable();
             $rules_table->prepare_items();
             ?><div class="wrap">
-                <form action="" method="POST">
-                    <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
+                <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
+                <h2>Import a CSV rules file</h2>
+                <form enctype="multipart/form-data" method="POST">
+                    <b>Select a CSV rules file to import (<input name="drop" type="checkbox" value="true" /> - drop all rules before import)</b> <br/> <input type="file" name="file" />
+                    <input name="action" value="rules_import" type="hidden" />
+                    <?php echo wp_nonce_field( 'rules_import' ); ?>
+                    <?php submit_button( 'Upload' ); ?>
+                </form>
+                <h2>Manual entry of rules</h2>
+                <form method="POST">
                     <table class="rules-add-form">
                         <tr>
                             <th>From</th>
                             <th>To</th>
                         </tr>
                         <tr>
-                            <td><input name="from" value="" /></td>
-                            <td><input name="to" value="" /></td>
+                            <td><input name="from" class="text-input" value="" /></td>
+                            <td><input name="to" class="text-input" value="" /></td>
                         </tr>
                     </table>
                     <input name="action" value="add" type="hidden" />
                     <?php submit_button( 'Add' ); ?>
                 </form>
-                <form action="" method="POST">
+                <?php echo !function_exists( 'preg_replace' ) ? '<b>REGEX syntax is not available! (install or enable preg_replace)</b><br/>' : ''; ?>
+                <form method="POST">
                     <?php echo $rules_table->display(); ?>
                 </form>
             </div><?php

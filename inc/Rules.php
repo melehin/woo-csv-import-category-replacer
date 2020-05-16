@@ -74,7 +74,11 @@ class Rules {
         foreach($row_terms as $i => $term) {
             foreach($this->cached_rules as $j => $rule) {
                 if ( $rule['from'] != "" && strpos( $term, $rule['from'] ) !== false ) {
-                    $row_terms[$i] = str_replace( $rule['from'], $rule['to'], $term );
+                    if( function_exists( 'preg_replace' ) ) {
+                        $row_terms[$i] = preg_replace( "~" . $rule['from'] . "~i", $rule['to'], $term );
+                    } else {
+                        $row_terms[$i] = str_replace( $rule['from'], $rule['to'], $term );
+                    }
                     break;
                 } elseif ( $default_to != null ) {
                     $row_terms[$i] = $default_to;
@@ -90,6 +94,11 @@ class Rules {
         $wpdb->query( "DROP TABLE IF EXISTS {$this->table_name}" ); 
     }
 
+    public function drop_rules() {
+        global $wpdb;
+        $wpdb->query( "DELETE FROM {$this->table_name}" ); 
+    }
+
     public function get_rules( $per_page = 5, $page_number = 1 ) {
         global $wpdb;
 
@@ -103,7 +112,6 @@ class Rules {
     /**
      * Returns the count of records in the database.
      *
-     * @return null|string
      */
     public function rules_count() {
         global $wpdb;
@@ -114,9 +122,25 @@ class Rules {
     }
 
     /**
+     * Import rules from CSV files.
+     *
+     */
+    public function import_rules( $filepath, $drop_all_before = false ) {
+        if($drop_all_before) {
+            $this->drop_rules();
+        }
+        $f = fopen( $filepath, 'r' );
+        while ($row = fgetcsv($f)) {
+            if(sizeof($row) == 2 && strtolower($row[0]) != 'from' && strtolower($row[1]) != 'to') {
+                $this->add_rule( $row[0], $row[1] );
+            }
+        }
+        fclose($f);
+    }
+
+    /**
      * Add a rule record.
      *
-     * @param int $id customer ID
      */
     public function add_rule( $from, $to ) {
         global $wpdb;
@@ -171,10 +195,10 @@ class RulesTable extends \WP_List_Table {
             return; 
         
         echo '<style type="text/css">';
-        echo '.wp-list-table .column-id { width: 1%; }';
+        echo '.wp-list-table .column-id { width: 2%; }';
         echo '.wp-list-table .column-from { width: 49%; }';
         echo '.wp-list-table .column-to { width: 49%; }';
-        echo '.rules-add-form input { width: 100%; }';
+        echo '.rules-add-form .text-input { width: 100%; }';
         echo '.rules-add-form { display: table !important; width: 100% !important; }';
         echo '</style>';
     }
@@ -182,8 +206,15 @@ class RulesTable extends \WP_List_Table {
     public function process_bulk_action() {
         if ( sizeof($_POST) == 0 )
             return;
-        
-        if ( isset( $_POST['action'] ) && $_POST['action'] == 'add' ) {
+        if ( isset( $_POST['action'] ) && $_POST['action'] == 'rules_import' && isset( $_FILES['file'] )) {
+            $file = wp_handle_upload( $_FILES['file'], $overrides = array('action' => 'rules_import') );
+            if( !isset($file['error']) && $file['type'] == "text/csv" ) {
+                $this->rules->import_rules( $file['file'], isset( $_POST['drop'] ) );
+                unlink($file['file']);
+            } else {
+                error_log( $file['error'] );
+            }
+        } elseif ( isset( $_POST['action'] ) && $_POST['action'] == 'add' ) {
           $this->rules->add_rule( esc_sql( $_POST['from'] ), esc_sql( $_POST['to'] ) );
         // If the delete bulk action is triggered
         } elseif ( ( isset( $_POST['action'] ) && $_POST['action'] == 'bulk-delete' )
@@ -209,7 +240,7 @@ class RulesTable extends \WP_List_Table {
         /** Process bulk action */
         $this->process_bulk_action();
 
-        $per_page     = $this->get_items_per_page( 'customers_per_page', 10 );
+        $per_page     = $this->get_items_per_page( 'customers_per_page', 20 );
         $current_page = $this->get_pagenum();
         $total_items  = $this->rules->rules_count();
 
