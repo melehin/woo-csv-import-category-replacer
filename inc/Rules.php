@@ -6,6 +6,7 @@ require_once( ABSPATH . '/wp-admin/includes/class-wp-list-table.php' );
 class Rules {
     var $cached_rules = array();
     var $importer = null;
+    var $last_filtered_rules = null;
 
     public function __construct() {
         global $wpdb;
@@ -19,6 +20,7 @@ class Rules {
         $sql = "CREATE TABLE {$this->table_name} (
             `id` int NOT NULL AUTO_INCREMENT,
             `from` text NOT NULL,
+            `filter` text NOT NULL,
             `to` text NOT NULL,
             PRIMARY KEY  (`id`)
         ) $charset_collate;";
@@ -30,6 +32,7 @@ class Rules {
             $this->table_name, 
             array( 
                 'from' => '', 
+                'filter' => '', 
                 'to' => 'Others', 
             ) 
         );
@@ -40,7 +43,7 @@ class Rules {
     }
 
     public function check_import_file_path( $check ) {
-        $this->cached_rules = $this->get_rules();
+        $this->cached_rules = $this->get_rules( $per_page = 100000 );
         add_filter( 'woocommerce_product_importer_formatting_callbacks', array( $this, 'importer_formatting_callbacks' ), 10, 2 );
         return $check;
     }
@@ -51,9 +54,26 @@ class Rules {
         foreach($callbacks as $i => $callback) {
             if('parse_categories_field' == $callback[1]) {
                 $callbacks[$i] = array( $this, 'replace_category' );
+            } elseif('parse_skip_field' == $callback[1]) {
+                $callbacks[$i] = array( $this, 'check_by_filter' );
             }
         }
         return $callbacks;
+    }
+
+    public function check_by_filter ( $value ) {
+        foreach($this->cached_rules as $j => $rule) {
+            if( $rule['filter'] == "" 
+            || (function_exists( 'preg_match' ) && preg_match( "~" . $rule['filter'] . "~i", $value ) === 1)
+            || (stripos( $value, $rule['filter'] ) !== false)) {
+                if( $this->last_filtered_rules == null ) {
+                    $this->last_filtered_rules = array($rule);
+                }elseif( !in_array($rule, $this->last_filtered_rules) ){
+                    $this->last_filtered_rules[] = $rule;
+                }
+            }
+        }
+        return call_user_func( array( $this->importer, 'parse_skip_field' ), $value );
     }
 
     public function replace_category ( $value ) {
@@ -61,29 +81,52 @@ class Rules {
             return array();
         }
 
+        $rules = array();
+
+        if ( $this->last_filtered_rules !== null ) {
+            $rules = $this->last_filtered_rules;
+            $this->last_filtered_rules = null;
+        } else {
+            $rules = $this->cached_rules;
+        }
+
         $row_terms  = explode( ",", $value );
         $default_to = null;
 
         foreach($this->cached_rules as $j => $rule) {
-            if($rule['from'] == "") {
+            if($rule['from'] == "" && $rule['filter'] == "") {
                 $default_to = $rule['to'];
                 break;
             }
         }
 
         foreach($row_terms as $i => $term) {
-            foreach($this->cached_rules as $j => $rule) {
-                if ( $rule['from'] != "" && strpos( $term, $rule['from'] ) !== false ) {
-                    if( function_exists( 'preg_replace' ) ) {
-                        $row_terms[$i] = preg_replace( "~" . $rule['from'] . "~i", $rule['to'], $term );
-                    } else {
-                        $row_terms[$i] = str_replace( $rule['from'], $rule['to'], $term );
+            $rules_not_found = true;
+            foreach($rules as $j => $rule) {
+                if ( $rule['from'] == "" 
+                    || (function_exists( 'preg_match' ) && preg_match( "~" . $rule['from'] . "~i", $term ) === 1)
+                    || (stripos( $term, $rule['from'] ) !== false)) {
+                    
+                    $rule['from_regex'] = $rule['from'];
+                    if(stripos( $rule['to'], '$1' ) !== false) {
+                        $rule['from_regex'] .= '.*';
                     }
-                    break;
-                } elseif ( $default_to != null ) {
-                    $row_terms[$i] = $default_to;
+
+                    if($rule['from'] == ""){
+                        $row_terms[$i] = $rule['to'];
+                    } elseif ( $rule['filter'] == "" && function_exists( 'preg_replace' ) ) {
+                        $row_terms[$i] = preg_replace( "~" . $rule['from'] . "~i", $rule['to'], $term );
+                    } elseif ( $rule['filter'] == "" ) {
+                        $row_terms[$i] = str_replace( $rule['from'], $rule['to'], $term );
+                    } else {
+                        $row_terms[$i] = $rule['to'];
+                    }
+                    $rules_not_found = false;
                     break;
                 }
+            }
+            if ( $default_to != null && $rules_not_found ) {
+                $row_terms[$i] = $default_to;
             }
         }
         return call_user_func( array( $this->importer, 'parse_categories_field' ), implode( ",", $row_terms ) );
@@ -102,7 +145,7 @@ class Rules {
     public function get_rules( $per_page = 5, $page_number = 1 ) {
         global $wpdb;
 
-        $sql = $wpdb->prepare( "SELECT * FROM {$this->table_name}  ORDER BY `from` DESC LIMIT %d OFFSET %d", $per_page, ( $page_number - 1 ) * $per_page );
+        $sql = $wpdb->prepare( "SELECT * FROM {$this->table_name}  ORDER BY `from` DESC, `filter` DESC LIMIT %d OFFSET %d", $per_page, ( $page_number - 1 ) * $per_page );
 
         $result = $wpdb->get_results( $sql, 'ARRAY_A' );
 
@@ -131,8 +174,8 @@ class Rules {
         }
         $f = fopen( $filepath, 'r' );
         while ($row = fgetcsv($f)) {
-            if(sizeof($row) == 2 && strtolower($row[0]) != 'from' && strtolower($row[1]) != 'to') {
-                $this->add_rule( $row[0], $row[1] );
+            if(sizeof($row) >= 3 && strtolower($row[0]) != 'from' && strtolower($row[1]) != 'filter' && strtolower($row[2]) != 'to') {
+                $this->add_rule( $row[0], $row[1], $row[2] );
             }
         }
         fclose($f);
@@ -142,13 +185,14 @@ class Rules {
      * Add a rule record.
      *
      */
-    public function add_rule( $from, $to ) {
+    public function add_rule( $from, $filter, $to ) {
         global $wpdb;
     
         $wpdb->insert( 
             $this->table_name, 
             array( 
                 'from' => $from, 
+                'filter' => $filter,
                 'to' => $to, 
             ) 
         );
@@ -184,6 +228,7 @@ class RulesTable extends \WP_List_Table {
         $columns = array(
           'id'   => '',
           'from' => 'From',
+          'filter' => '(or) Filter',
           'to'      => 'To'
         );
         return $columns;
@@ -196,8 +241,9 @@ class RulesTable extends \WP_List_Table {
         
         echo '<style type="text/css">';
         echo '.wp-list-table .column-id { width: 2%; }';
-        echo '.wp-list-table .column-from { width: 49%; }';
-        echo '.wp-list-table .column-to { width: 49%; }';
+        echo '.wp-list-table .column-from { width: 32%; }';
+        echo '.wp-list-table .column-filter { width: 32%; }';
+        echo '.wp-list-table .column-to { width: 32%; }';
         echo '.rules-add-form .text-input { width: 100%; }';
         echo '.rules-add-form { display: table !important; width: 100% !important; }';
         echo '</style>';
@@ -215,7 +261,7 @@ class RulesTable extends \WP_List_Table {
                 error_log( $file['error'] );
             }
         } elseif ( isset( $_POST['action'] ) && $_POST['action'] == 'add' ) {
-          $this->rules->add_rule( esc_sql( $_POST['from'] ), esc_sql( $_POST['to'] ) );
+          $this->rules->add_rule( esc_sql( $_POST['from'] ), esc_sql( $_POST['filter'] ), esc_sql( $_POST['to'] ) );
         // If the delete bulk action is triggered
         } elseif ( ( isset( $_POST['action'] ) && $_POST['action'] == 'bulk-delete' )
              || ( isset( $_POST['action2'] ) && $_POST['action2'] == 'bulk-delete' )
@@ -258,6 +304,7 @@ class RulesTable extends \WP_List_Table {
           case 'id':
             return "<input type='checkbox' name='id[]' value='{$item[ $column_name ]}' />";
           case 'from':
+          case 'filter':
           case 'to':
             return $item[ $column_name ];
           default:

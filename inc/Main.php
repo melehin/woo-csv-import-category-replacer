@@ -81,10 +81,12 @@ if ( ! class_exists( 'Main' ) ) {
                     <table class="rules-add-form">
                         <tr>
                             <th>From</th>
+                            <th>Filter (by Name, Short Description and Description) <br/><small>The category column should be to the right of these fields in the CSV!</small></th>
                             <th>To</th>
                         </tr>
                         <tr>
                             <td><input name="from" class="text-input" value="" /></td>
+                            <td><input name="filter" class="text-input" value="" /></td>
                             <td><input name="to" class="text-input" value="" /></td>
                         </tr>
                     </table>
