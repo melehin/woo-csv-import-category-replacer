@@ -103,9 +103,12 @@ class Rules {
         foreach($row_terms as $i => $term) {
             $rules_not_found = true;
             foreach($rules as $j => $rule) {
-                if ( $rule['from'] == "" 
-                    || (function_exists( 'preg_match' ) && preg_match( "~" . $rule['from'] . "~i", $term ) === 1)
-                    || (stripos( $term, $rule['from'] ) !== false)) {
+
+                $check = $rule['from'] == "" 
+                || (function_exists( 'preg_match' ) && preg_match( "~" . $rule['from'] . ".*~i", $term ) === 1)
+                || (stripos( $term, $rule['from'] ) !== false);
+                
+                if ( $check ) {
                     
                     $rule['from_regex'] = $rule['from'];
                     if(stripos( $rule['to'], '$1' ) !== false) {
@@ -129,7 +132,24 @@ class Rules {
                 $row_terms[$i] = $default_to;
             }
         }
-        return call_user_func( array( $this->importer, 'parse_categories_field' ), implode( ",", $row_terms ) );
+
+        $cat_ids = array();
+        // Split each tegm_group to terms
+        foreach($row_terms as $i => $term_group) {
+            // Converts each term to numberic category_id
+            foreach(explode(',', $term_group) as $i => $term) {
+                if( strpos( $term, '#' ) !== false ) {
+                    $cat_ids[] = trim( str_replace( '#', '', $term ) );
+                } else {
+                    $cats = call_user_func( array( $this->importer, 'parse_categories_field' ), $term );
+                    if( sizeof($cats) ) {
+                        $cat_ids[] = $cats[0];
+                    }
+                }
+            }
+        }
+
+        return $cat_ids;
     }
 
     public function remove_db() {
