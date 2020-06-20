@@ -13,6 +13,9 @@
  */
 namespace WOOCICR;
 
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
 
 define( 'WOOCICR_MAIN_FILE', __FILE__ );
 define( 'WOOCICR_DIR', plugin_dir_path( __FILE__ ) );
