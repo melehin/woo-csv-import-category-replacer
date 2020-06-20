@@ -90,6 +90,8 @@ class Rules {
             $rules = $this->cached_rules;
         }
 
+        // Replace escaped comma to _ESCAPED_COMMA_ constant
+        $value = str_replace("\,", "_ESCAPED_COMMA_", $value);
         $row_terms  = explode( ",", $value );
         $default_to = null;
 
@@ -101,10 +103,12 @@ class Rules {
         }
 
         foreach($row_terms as $i => $term) {
+            $term = str_replace("_ESCAPED_COMMA_", "\\,", $term);
             $rules_not_found = true;
             foreach($rules as $j => $rule) {
-
-                $check = $rule['from'] == "" 
+                $rule['from'] = str_replace("\\", "\\\\", $rule['from']);
+                $rule['to'] = str_replace("\\", "\\\\", $rule['to']);
+                $check = $rule['from'] == ""
                 || (function_exists( 'preg_match' ) && preg_match( "~" . $rule['from'] . ".*~i", $term ) === 1)
                 || (stripos( $term, $rule['from'] ) !== false);
                 
@@ -118,7 +122,7 @@ class Rules {
                     if($rule['from'] == ""){
                         $row_terms[$i] = $rule['to'];
                     } elseif ( $rule['filter'] == "" && function_exists( 'preg_replace' ) ) {
-                        $row_terms[$i] = preg_replace( "~" . $rule['from'] . "~i", $rule['to'], $term );
+                        $row_terms[$i] = preg_replace( "~" . $rule['from_regex'] . "~i", $rule['to'], $term );
                     } elseif ( $rule['filter'] == "" ) {
                         $row_terms[$i] = str_replace( $rule['from'], $rule['to'], $term );
                     } else {
@@ -134,10 +138,12 @@ class Rules {
         }
 
         $cat_ids = array();
-        // Split each tegm_group to terms
+        // Split each term_group to terms
         foreach($row_terms as $i => $term_group) {
+            $term_group = str_replace("\\,", "_ESCAPED_COMMA_", $term_group);
             // Converts each term to numberic category_id
             foreach(explode(',', $term_group) as $i => $term) {
+                $term = str_replace("_ESCAPED_COMMA_", "\\,", $term);
                 if( strpos( $term, '#' ) !== false ) {
                     $cat_ids[] = trim( str_replace( '#', '', $term ) );
                 } else {
